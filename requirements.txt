@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+python-jose
+passlib
+python-dotenv
+numpy
+scikit-learn
+opencv-python-headless
