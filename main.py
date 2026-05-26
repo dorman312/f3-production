@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -70,9 +71,21 @@ async def lifespan(app: FastAPI):
         logger.error("Prediction service init failed: %s", exc)
         app_state.prediction_service = None
 
+    stream_processor = None
+    try:
+        from workers.stream_processor import StreamProcessor
+        ingest_base = os.getenv("INGEST_BASE_URL", "http://localhost:8000")
+        stream_processor = StreamProcessor(ingest_base=ingest_base)
+        asyncio.create_task(stream_processor.start())
+        logger.info("F3 stream processor started (ingest base: %s)", ingest_base)
+    except Exception as exc:
+        logger.error("Stream processor init failed: %s", exc)
+
     logger.info("F3 ready — all components online")
     yield
     logger.info("F3 shutting down")
+    if stream_processor is not None:
+        await stream_processor.stop()
 
 
 app = FastAPI(
