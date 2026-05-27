@@ -88,7 +88,7 @@ class ManualIngest(BaseModel):
     venue_id: str
     zone_id: str
     person_count: int
-    timestamp: datetime
+    timestamp: datetime = Field(default_factory=_now)
     staff_id: Optional[str] = None
     notes: Optional[str] = None
 
