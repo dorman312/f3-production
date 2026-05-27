@@ -25,66 +25,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ── Demo seed ─────────────────────────────────────────────────────────────────
+# ── Production venue seed ─────────────────────────────────────────────────────
 
-def _seed_demo_data() -> None:
+def _seed_production_venues() -> None:
     """
-    Creates a fixed-ID venue with zones and crowd readings if the store is empty.
+    Ensures Lions Field Waconia exists in the store on every startup.
 
-    The venue ID is intentionally hardcoded so the operator dashboard and any
-    other clients that embed the ID stay consistent across server restarts.
-    Called once at the end of the lifespan startup block.
+    Only creates the venue and its zones — no fake crowd data. Real readings
+    come exclusively from registered cameras via the stream processor.
+
+    Safe to call repeatedly: checks for the fixed venue ID before writing.
     """
     from state import store
-    from models.venue import Venue, Zone, DensityReading
+    from models.venue import Venue, Zone
 
-    if store.venues:
-        logger.info("seed: store already has %d venue(s) — skipping", len(store.venues))
+    VENUE_ID   = "7bd60213-8351-480e-9ff4-399130fd0c2f"
+    VENUE_NAME = "Lions Field Waconia"
+
+    if VENUE_ID in store.venues:
+        logger.info("startup: venue '%s' already present — skipping seed", VENUE_NAME)
         return
-
-    # ── Venue ──────────────────────────────────────────────────────
-    VENUE_ID = "52e70b13-b7c2-47ab-ad00-97a16c2f85dd"
 
     venue = Venue(
         id=VENUE_ID,
-        name="US Bank Stadium",
-        type="stadium",
-        address="401 Chicago Ave, Minneapolis, MN",
+        name=VENUE_NAME,
+        type="park",
+        address="Waconia, MN",
     )
     store.venues[venue.id] = venue
     store.zones[venue.id]  = {}
     store.alerts[venue.id] = {}
 
-    # ── Zones ───────────────────────────────────────────────────────
-    # Each tuple: (name, type, x_pct, y_pct, w_pct, h_pct, area_m2, max_capacity)
-    _ZONE_DEFS = [
-        ("Gate A",             "gate",       0.10, 0.05, 0.15, 0.10, 200, 500),
-        ("Gate B",             "gate",       0.75, 0.05, 0.15, 0.10, 200, 500),
-        ("Concession Stand 1", "concession", 0.20, 0.35, 0.20, 0.12, 150, 300),
-        ("Concession Stand 2", "concession", 0.60, 0.35, 0.20, 0.12, 150, 300),
-        ("Concession Stand 3", "concession", 0.40, 0.50, 0.20, 0.12, 150, 300),
-        ("Restroom Level 1",   "restroom",   0.10, 0.60, 0.15, 0.10, 100, 200),
-        ("Restroom Level 2",   "restroom",   0.75, 0.60, 0.15, 0.10, 100, 200),
-        ("Main Exit North",    "exit",       0.35, 0.85, 0.15, 0.10, 300, 800),
-        ("Main Exit South",    "exit",       0.55, 0.85, 0.15, 0.10, 300, 800),
+    # (name, type, x_pct, y_pct, w_pct, h_pct, area_m2, max_capacity)
+    _ZONES = [
+        ("Main Entrance",   "gate",      0.40, 0.05, 0.20, 0.10, 100,  200),
+        ("Concession Stand","concession",0.20, 0.40, 0.25, 0.12,  80,  150),
+        ("Restrooms",       "restroom",  0.60, 0.40, 0.20, 0.12,  60,  100),
+        ("Playground Area", "corridor",  0.30, 0.60, 0.40, 0.15, 500,  300),
+        ("Parking Lot Exit","exit",      0.10, 0.80, 0.30, 0.12,1000,  500),
+        ("Main Exit",       "exit",      0.60, 0.80, 0.30, 0.12, 200,  400),
     ]
 
-    # ── Crowd counts ────────────────────────────────────────────────
-    _CROWD = {
-        "Gate A":             142,
-        "Gate B":              89,
-        "Concession Stand 1":  63,
-        "Concession Stand 2": 211,
-        "Concession Stand 3":  95,
-        "Restroom Level 1":    28,
-        "Restroom Level 2":    77,
-        "Main Exit North":     34,
-        "Main Exit South":    156,
-    }
-
-    now = datetime.now(timezone.utc)
-
-    for name, ztype, x, y, w, h, area, cap in _ZONE_DEFS:
+    for name, ztype, x, y, w, h, area, cap in _ZONES:
         zone = Zone(
             venue_id=VENUE_ID,
             name=name,
@@ -98,25 +80,12 @@ def _seed_demo_data() -> None:
         )
         store.zones[VENUE_ID][zone.id] = zone
 
-        reading = DensityReading(
-            venue_id=VENUE_ID,
-            zone_id=zone.id,
-            person_count=_CROWD[name],
-            timestamp=now,
-            source="demo",
-        )
-        store.readings.append(reading)
-
-    # Alert generation runs automatically via add_reading; trigger it once
-    # now that all readings are loaded so high-density zones get alerts.
-    store.generate_alerts(VENUE_ID)
-
-    zone_count = len(store.zones[VENUE_ID])
     logger.info(
-        "seed: created venue '%s'  id=%s  zones=%d",
-        venue.name, VENUE_ID, zone_count,
+        "startup: seeded venue '%s'  id=%s  zones=%d  "
+        "(no crowd data — awaiting cameras)",
+        VENUE_NAME, VENUE_ID, len(store.zones[VENUE_ID]),
     )
-    logger.info("seed: venue ID for dashboard → %s", VENUE_ID)
+    logger.info("startup: venue ID → %s", VENUE_ID)
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -177,7 +146,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error("Stream processor init failed: %s", exc)
 
-    _seed_demo_data()
+    _seed_production_venues()
     logger.info("F3 ready — all components online")
     yield
     logger.info("F3 shutting down")
